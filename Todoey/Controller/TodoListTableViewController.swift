@@ -7,38 +7,28 @@
 //
 
 import UIKit
+import CoreData
 
-class TodoListTableViewController: UITableViewController {
+class TodoListTableViewController: UITableViewController{
     
     var itemArray = [Item]()
     let defaults = UserDefaults.standard
+
+    var selectedCategory : Category? {
+        didSet{
+            loadItems()
+        }
+    }
     
-    let filePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Items.plist")
+    
+    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        
-        
-        print(filePath)
-        
-        let newItem = Item()
-        newItem.title = "Find Mike"
-        itemArray.append(newItem)
-        
-        let newItem1 = Item()
-        newItem1.title = "Find Eggs"
-        itemArray.append(newItem1)
-        
-        let newItem2 = Item()
-        newItem2.title = "Find Yon"
-        itemArray.append(newItem2)
-        
-//        if let items = defaults.array(forKey: "TodoListKey") as? [Item]{
-//            itemArray = items
-//        }
-        
-        loadItems()
+        print(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask))
+        let request : NSFetchRequest<Item> = Item.fetchRequest()
+        loadItems(with: request)
     }
 
     // MARK: - Table view data source
@@ -65,9 +55,13 @@ class TodoListTableViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
 
         //print(itemArray[indexPath.row])
+//        context.delete(itemArray[indexPath.row])
+//
+//        itemArray.remove(at: indexPath.row)
+//
         tableView.deselectRow(at: indexPath, animated: true)
         
-        itemArray[indexPath.row].done = !itemArray[indexPath.row].done
+        
         
         saveItem()
     }
@@ -79,9 +73,13 @@ class TodoListTableViewController: UITableViewController {
         let alert = UIAlertController(title: "Add new todoey Item", message: "", preferredStyle: .alert)
         
         let action = UIAlertAction(title: "Add item", style: .default) { (action) in
+            
            
-            let newItem = Item()
+           
+            let newItem = Item(context: self.context)
             newItem.title = Textfield.text!
+            newItem.done = false
+            newItem.parentCategory = self.selectedCategory
             self.itemArray.append(newItem)
             
             self.saveItem()
@@ -99,32 +97,68 @@ class TodoListTableViewController: UITableViewController {
     
     
     func saveItem(){
-        
-        let encoder = PropertyListEncoder()
-        
+
         do{
-            let data = try encoder.encode(self.itemArray)
-            try data.write(to: self.filePath!)
+            
+            try context.save()
         }
         catch{
-            
+            print(error)
         }
         
         self.tableView.reloadData()
         
     }
     
-    func loadItems(){
+    func loadItems(with request : NSFetchRequest<Item> = Item.fetchRequest(),predicate : NSPredicate? = nil){
         
-        if let data = try? Data(contentsOf: filePath!){
-            let decoder = PropertyListDecoder()
+        let categorypredicate = NSPredicate(format: "parentCategory.name MATCHES %@", (selectedCategory?.name!)!)
+        
+        if let additionalPredicate = predicate{
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [categorypredicate,additionalPredicate])
+        }
+        else{
+            request.predicate = categorypredicate
+        }
+        do{
+            itemArray = try context.fetch(request)
+        }
+        catch{
+            print(error)
+        }
+        tableView.reloadData()
+        
+    }
+}
+
+extension TodoListTableViewController : UISearchBarDelegate{
+    
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        
+        let request : NSFetchRequest<Item> = Item.fetchRequest()
+        
+         let predicate = NSPredicate(format: "title CONTAINS[cd] %@", searchBar.text!)
+        
+        
+        let sortDescriptor = NSSortDescriptor(key: "title", ascending: true)
+        
+        request.sortDescriptors = [sortDescriptor]
+        
+        loadItems(with: request,predicate: predicate)
+        
+        
+
+    }
+    
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        
+        if searchBar.text?.count == 0 {
+            loadItems()
             
-            do{
-                itemArray = try decoder.decode([Item].self, from: data)
+            DispatchQueue.main.async {
+                searchBar.resignFirstResponder()
             }
-            catch{
-                print("error")
-            }
+            
         }
     }
 }
